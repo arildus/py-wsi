@@ -169,14 +169,14 @@ class Turtle(object):
 
         return all_patches, all_coords, all_cls, all_labels
 
-    def get_patches_from_file(self, file_name, verbose=False):
+    def get_patches_from_file(self, file_name, type, verbose=False):
         """ Fetches the patches from one file, depending on storage method. 
         """
         if not self.__check_file_found(file_name):
             return None
 
         if self.storage_type == 'disk':
-            return self.__get_patches_from_disk(file_name[:-4], verbose=verbose)
+            return self.__get_patches_from_disk(file_name[:-4], type, verbose=verbose)
         elif self.storage_type == 'hdf5':
             return self.__get_patches_from_hdf5(file_name[:-4], verbose=verbose)
         else:
@@ -344,33 +344,34 @@ class Turtle(object):
     #                Disk-specific helper functions                           #
     ###########################################################################
 
-    def __get_patches_from_disk(self, wsi_name, verbose=False):
+    def __get_patches_from_disk(self, wsi_name, type, verbose=False):
         """ Loads all the PNG patch images from disk. Note that this function does NOT 
             distinguish between other PNG images that may be in the directory; everything
             will be loaded.
         """
         # Get all files matching the WSI file name and correct file type.
+        directory = os.path.join(self.db_location, wsi_name, type) # example db_loaction/RECHERCHE-003/patches
         patch_files = np.array(
-            [file for file in listdir(self.db_location) 
-            if isfile(join(self.db_location, file)) and '.png' in file and wsi_name in file])
+            [file for file in listdir(directory) 
+            if isfile(join(directory, file)) and '.png' in file and wsi_name in file])
 
         patches, coords, classes, labels = [], [], [], []
         for f in patch_files:
-            patches.append(np.array(Image.open(self.db_location + f), dtype=np.uint8))
+            patches.append(np.array(Image.open(os.path.join(directory, f)), dtype=np.uint8))
 
             f_ = f.split('_')
             coords.append([int(f_[1]), int(f_[2])])
 
             # Check for a label.
-            if len(f_[3]) > 4:
-                class_ = int(f_[3].split(".")[0])
-                classes.append(class_)
-                l = np.zeros((len(self.label_map)))
-                l[class_] = 1
-                labels.append(l)
-            else:
+            #if len(f_[3]) > 4:
+            #    class_ = int(f_[3].split(".")[0])
+            #    classes.append(class_)
+            #    l = np.zeros((len(self.label_map)))
+            #    l[class_] = 1
+            #    labels.append(l)
+            #else:
                 # To be consistant with LMDB implementation.
-                classes.append(-1)
+            #    classes.append(-1)
         if verbose:
             print("[py-wsi] loaded", len(patches), "patches from", wsi_name)
 

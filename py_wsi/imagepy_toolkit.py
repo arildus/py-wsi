@@ -27,15 +27,13 @@ def show_images(images, per_row, per_column):
     plt.show()
 
 
-def show_labeled_patches(images, clss):
+def show_labeled_patches(images):
     fig = plt.figure(figsize=(20, 10))
     data = images[:50]
-    labels = clss[:50]
 
     for i, image in enumerate(data):
         plt.subplot(5, 10, i+1)
         plt.imshow(image)
-        plt.title(str(labels[i]))
         plt.axis("off")
 
     plt.show()

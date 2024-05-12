@@ -12,6 +12,9 @@ from openslide.deepzoom import DeepZoomGenerator
 from glob import glob
 from xml.dom import minidom
 from shapely.geometry import Polygon, Point
+from PIL import Image, ImageDraw
+import xml.etree.ElementTree as ET
+import cv2
 
 from .store import *
 
@@ -74,6 +77,35 @@ def get_regions(path):
 def patch_to_tile_size(patch_size, overlap):
     return patch_size - overlap*2
 
+def create_binary_mask(annotation_file, dimensions):
+    # Get dimensions
+    mask_width, mask_height = dimensions
+
+    # Create a blank mask
+    mask = np.zeros((mask_height, mask_width), dtype=np.uint8)
+
+    # Parse annotation XML file
+    tree = ET.parse(annotation_file)
+    root = tree.getroot()
+
+    # Loop through annotations
+    for annotation in root.findall('.//Annotation'):
+        coords = []
+        for coord in annotation.findall('.//Coordinate'):
+            x = float(coord.attrib['X'])
+            y = float(coord.attrib['Y'])
+            # Convert coordinates to image space
+            x_img = int(x)
+            y_img = int(y)
+            coords.append((x_img, y_img))
+        # Convert coords list to array
+        pts = np.array(coords, np.int32)
+        pts = pts.reshape((-1, 1, 2))
+        # Draw filled polygon
+        cv2.fillPoly(mask, [pts], 255)
+
+    return mask
+
 def sample_and_store_patches(file_name,
                              file_dir,
                              pixel_overlap,
@@ -102,13 +134,26 @@ def sample_and_store_patches(file_name,
         Note: patch_size is the dimension of the sampled patches, NOT equivalent to openslide's definition
         of tile_size. This implementation was chosen to allow for more intuitive usage.
     '''
+    file_path = os.path.join(file_dir, file_name)
+    xml_path = os.path.join(xml_dir, file_name[:-4] + ".xml")
 
     tile_size = patch_to_tile_size(patch_size, pixel_overlap)
-    slide = open_slide(file_dir + file_name)
+    slide = open_slide(file_path)
     tiles = DeepZoomGenerator(slide,
                               tile_size=tile_size,
                               overlap=pixel_overlap,
                               limit_bounds=limit_bounds)
+    
+    dimensions = slide.dimensions
+    Image.MAX_IMAGE_PIXELS = None
+    
+    binary_mask_image = create_binary_mask(xml_path, dimensions)
+    bm_slide = open_slide(Image.fromarray(binary_mask_image, 'L'))
+    print(bm_slide.__class__)
+    bm_tiles = DeepZoomGenerator(bm_slide,
+                                tile_size=tile_size,
+                                overlap=pixel_overlap,
+                                limit_bounds=limit_bounds) 
 
     if xml_dir:
         # Expect filename of XML annotations to match SVS file name
@@ -122,14 +167,22 @@ def sample_and_store_patches(file_name,
     x, y = 0, 0
     count, batch_count = 0, 0
     patches, coords, labels = [], [], []
+    bm_patches, bm_coords = [], []
     while y < y_tiles:
         while x < x_tiles:
-            new_tile = np.array(tiles.get_tile(level, (x, y)), dtype=np.uint8)
+            # I had to rewrite this get_tile() method from openslide-python package...
+            new_tile = np.array(tiles.get_tile(level, (x, y), 'RGB'), dtype=np.uint8)
             # OpenSlide calculates overlap in such a way that sometimes depending on the dimensions, edge
             # patches are smaller than the others. We will ignore such patches.
             if np.shape(new_tile) == (patch_size, patch_size, 3):
+                bm_tile = np.array(bm_tiles.get_tile(level, (x, y), 'L'), dtype=np.uint8)
+
                 patches.append(new_tile)
                 coords.append(np.array([x, y]))
+
+                bm_patches.append(bm_tile)
+                bm_coords.append(np.array([x ,y]))
+                
                 count += 1
 
                 # Calculate the patch label based on centre point.
@@ -142,26 +195,8 @@ def sample_and_store_patches(file_name,
         # rows_per_txn rows of patches. Write after last row regardless. HDF5 does NOT follow
         # this convention due to efficiency.
         if (y % rows_per_txn == 0 and y != 0) or y == y_tiles-1:
-            if storage_option == 'disk':
-                save_to_disk(db_location, patches, coords, file_name[:-4], labels)
-            elif storage_option == 'lmdb':
-                # LMDB by default.
-                save_in_lmdb(env, patches, coords, file_name[:-4], labels)
-            if storage_option != 'hdf5':
-                del patches
-                del coords
-                del labels
-                patches, coords, labels = [], [], [] # Reset right away.
+            save_to_disk(db_location, patches, coords, bm_patches, file_name[:-4], labels, 'L')
 
         y += 1
         x = 0
-
-    # Write to HDF5 files all in one go.
-    if storage_option == 'hdf5':
-        save_to_hdf5(db_location, patches, coords, file_name[:-4], labels)
-
-    # Need to save tile dimensions if LMDB for retrieving patches by key.
-    if storage_option == 'lmdb':
-        save_meta_in_lmdb(meta_env, file_name[:-4], [x_tiles, y_tiles])
-
     return count

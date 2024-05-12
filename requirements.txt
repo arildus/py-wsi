@@ -1,0 +1,7 @@
+Pillow==10.3.0
+numpy==1.26.4
+opencv-python==4.9.0.80
+shapely==2.0.4
+h5py==3.11.0
+lmdb==0.93
+matplotlib==3.8.4

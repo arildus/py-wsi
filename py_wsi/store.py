@@ -16,6 +16,7 @@ from PIL import Image
 import lmdb
 import numpy as np
 from .item import *
+import os
 
 
 ###########################################################################
@@ -101,7 +102,7 @@ def save_to_hdf5(db_location, patches, coords, file_name, labels):
 #                Option 3: save patches to disk                           #
 ###########################################################################
 
-def save_to_disk(db_location, patches, coords, file_name, labels):
+def save_to_disk(db_location, patches, coords, bm_pathces, file_name, labels, mode):
     """ Saves numpy patches to .png files (full resolution). 
         Meta data is saved in the file name.
         - db_location       folder to save images in
@@ -110,13 +111,36 @@ def save_to_disk(db_location, patches, coords, file_name, labels):
         - file_name         original source WSI name
         - labels            patch labels (opt)
     """
+
+    image_dir = os.path.join(db_location, file_name) # for example db_location/RECHERCHE-003
+    patch_dir = os.path.join(image_dir, 'patches') # db_location/RECHERCHE-003/patches
+    label_dir = os.path.join(image_dir, 'labels')
+
+    try: 
+        os.makedirs(patch_dir, exist_ok = True) 
+        print("Directory '%s' created successfully" % image_dir)
+    except OSError as error: 
+        print("Directory '%s' can not be created" % image_dir)
+    try: 
+        os.makedirs(label_dir, exist_ok = True) 
+        print("Directory '%s' created successfully" % label_dir)
+    except OSError as error: 
+        print("Directory '%s' can not be created" % label_dir)
+
     save_labels = len(labels)
     for i, patch in enumerate(patches):
+        bm_patch = bm_pathces[i]
         # Construct the new PNG filename
         patch_fname = file_name + "_" + str(coords[i][0]) + "_" + str(coords[i][1]) + "_"
 
         if save_labels:
             patch_fname += str(labels[i])
+        
+        # I think it's a good idea to keep the names the same for image and label
+        # because it makes processing easier
+        bm_patch_fname = patch_fname
 
         # Save the image.
-        Image.fromarray(patch).save(db_location + patch_fname + ".png")
+        Image.fromarray(patch).save(os.path.join(patch_dir, patch_fname + ".png"))
+        # Save label image
+        Image.fromarray(bm_patch, mode).save(os.path.join(label_dir, bm_patch_fname + ".png"))
