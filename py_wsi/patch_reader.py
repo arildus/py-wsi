@@ -106,6 +106,24 @@ def create_binary_mask(annotation_file, dimensions):
 
     return mask
 
+def is_mostly_white(patch, total_pixels, thresh=0.97):
+    # Convert patch to grayscale
+    gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+
+    # How "white" the pixel must be to be considered as background
+    # 241 seems to be the best value, based on experiments
+    background_thresh = 231
+    
+    # Threshold the patch to separate background from tissue
+    _, binary_mask = cv2.threshold(gray, background_thresh, 255, cv2.THRESH_BINARY)
+    
+    # Calculate the percentage of white pixels
+    white_pixels = cv2.countNonZero(binary_mask)
+    white_percentage = white_pixels / total_pixels
+    
+    # Return True if white percentage is above threshold
+    return white_percentage > thresh
+
 def sample_and_store_patches(file_name,
                              file_dir,
                              pixel_overlap,
@@ -149,15 +167,10 @@ def sample_and_store_patches(file_name,
     
     binary_mask_image = create_binary_mask(xml_path, dimensions)
     bm_slide = open_slide(Image.fromarray(binary_mask_image, 'L'))
-    print(bm_slide.__class__)
     bm_tiles = DeepZoomGenerator(bm_slide,
                                 tile_size=tile_size,
                                 overlap=pixel_overlap,
                                 limit_bounds=limit_bounds) 
-
-    if xml_dir:
-        # Expect filename of XML annotations to match SVS file name
-        regions, region_labels = get_regions(xml_dir + file_name[:-4] + ".xml")
 
     if level >= tiles.level_count:
         print("[py-wsi error]: requested level does not exist. Number of slide levels: " + str(tiles.level_count))
@@ -172,23 +185,21 @@ def sample_and_store_patches(file_name,
         while x < x_tiles:
             # I had to rewrite this get_tile() method from openslide-python package...
             new_tile = np.array(tiles.get_tile(level, (x, y), 'RGB'), dtype=np.uint8)
+
             # OpenSlide calculates overlap in such a way that sometimes depending on the dimensions, edge
             # patches are smaller than the others. We will ignore such patches.
             if np.shape(new_tile) == (patch_size, patch_size, 3):
                 bm_tile = np.array(bm_tiles.get_tile(level, (x, y), 'L'), dtype=np.uint8)
+                contains_glomeruli = np.count_nonzero(bm_tile) > 0
+                if contains_glomeruli or not is_mostly_white(new_tile, patch_size**2):
+                    patches.append(new_tile)
+                    coords.append(np.array([x, y]))
 
-                patches.append(new_tile)
-                coords.append(np.array([x, y]))
-
-                bm_patches.append(bm_tile)
-                bm_coords.append(np.array([x ,y]))
-                
-                count += 1
-
-                # Calculate the patch label based on centre point.
-                if xml_dir:
-                    converted_coords = tiles.get_tile_coordinates(level, (x, y))[0]
-                    labels.append(generate_label(regions, region_labels, converted_coords, label_map))
+                    bm_patches.append(bm_tile)
+                    bm_coords.append(np.array([x ,y]))
+                    
+                    count += 1
+                    labels.append(int(contains_glomeruli))
             x += 1
 
         # To save memory, we will save data into the dbs every rows_per_txn rows. i.e., each transaction will commit
