@@ -7,12 +7,12 @@ Author: @ysbecca
 '''
 
 import numpy as np
-from openslide import open_slide  
-from openslide.deepzoom import DeepZoomGenerator
+from openslide import open_slide
+from .customDeepzoomGenerator import CustomDeepZoomGenerator
 from glob import glob
 from xml.dom import minidom
 from shapely.geometry import Polygon, Point
-from PIL import Image, ImageDraw
+from PIL import Image
 import xml.etree.ElementTree as ET
 import cv2
 
@@ -157,7 +157,7 @@ def sample_and_store_patches(file_name,
 
     tile_size = patch_to_tile_size(patch_size, pixel_overlap)
     slide = open_slide(file_path)
-    tiles = DeepZoomGenerator(slide,
+    tiles = CustomDeepZoomGenerator(slide,
                               tile_size=tile_size,
                               overlap=pixel_overlap,
                               limit_bounds=limit_bounds)
@@ -167,7 +167,7 @@ def sample_and_store_patches(file_name,
     
     binary_mask_image = create_binary_mask(xml_path, dimensions)
     bm_slide = open_slide(Image.fromarray(binary_mask_image, 'L'))
-    bm_tiles = DeepZoomGenerator(bm_slide,
+    bm_tiles = CustomDeepZoomGenerator(bm_slide,
                                 tile_size=tile_size,
                                 overlap=pixel_overlap,
                                 limit_bounds=limit_bounds) 
