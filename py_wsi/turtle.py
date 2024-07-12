@@ -383,7 +383,7 @@ class Turtle(object):
         """
         total_count = 0
         for file in self.files:
-            print(file, end=" ")
+            print("Creating tiles for image: ", file)
             patch_count = sample_and_store_patches(
                                 file,
                                 self.file_dir,

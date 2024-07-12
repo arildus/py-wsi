@@ -15,6 +15,7 @@ from shapely.geometry import Polygon, Point
 from PIL import Image
 import xml.etree.ElementTree as ET
 import cv2
+from tqdm import tqdm
 
 from .store import *
 
@@ -164,7 +165,6 @@ def sample_and_store_patches(file_name,
     
     dimensions = slide.dimensions
     Image.MAX_IMAGE_PIXELS = None
-    
     binary_mask_image = create_binary_mask(xml_path, dimensions)
     bm_slide = open_slide(Image.fromarray(binary_mask_image, 'L'))
     bm_tiles = CustomDeepZoomGenerator(bm_slide,
@@ -177,11 +177,12 @@ def sample_and_store_patches(file_name,
         return 0
     x_tiles, y_tiles = tiles.level_tiles[level]
 
-    x, y = 0, 0
+    x = 0
     count, batch_count = 0, 0
     patches, coords, labels = [], [], []
     bm_patches, bm_coords = [], []
-    while y < y_tiles:
+    tqdm_bar = tqdm(range(y_tiles), desc='Processing tiles')
+    for y in tqdm_bar:
         while x < x_tiles:
             # I had to rewrite this get_tile() method from openslide-python package...
             new_tile = np.array(tiles.get_tile(level, (x, y), 'RGB'), dtype=np.uint8)
@@ -208,6 +209,5 @@ def sample_and_store_patches(file_name,
         if (y % rows_per_txn == 0 and y != 0) or y == y_tiles-1:
             save_to_disk(db_location, patches, coords, bm_patches, file_name[:-4], labels, 'L')
 
-        y += 1
         x = 0
     return count
